@@ -56,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -66,6 +67,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.itinerarium.data.model.TransportMode
+import com.itinerarium.data.network.dto.toCleanDisplayName
 import com.itinerarium.ui.theme.EcoGreen
 import com.itinerarium.ui.theme.EcoGreenContainer
 import com.itinerarium.ui.theme.ItinerariumTheme
@@ -85,6 +87,9 @@ fun HomeScreen(
     var destination by remember { mutableStateOf(initialDestination) }
     var selectedTransportMode by remember { mutableStateOf<TransportMode?>(null) }
     var attemptedSubmit by remember { mutableStateOf(false) }
+
+    var isOriginFocused by remember { mutableStateOf(false) }
+    var isDestinationFocused by remember { mutableStateOf(false) }
 
     val originSuggestions by (viewModel?.originSuggestions?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
     val destinationSuggestions by (viewModel?.destinationSuggestions?.collectAsState() ?: remember { mutableStateOf(emptyList()) })
@@ -214,7 +219,7 @@ fun HomeScreen(
                             if (origin.isNotEmpty()) {
                                 IconButton(onClick = {
                                     origin = ""
-                                    viewModel?.onOriginQueryChanged("")
+                                    viewModel?.clearOriginSuggestions()
                                 }) {
                                     Icon(
                                         imageVector = Icons.Default.Clear,
@@ -236,11 +241,13 @@ fun HomeScreen(
                             unfocusedBorderColor = MaterialTheme.colorScheme.outline
                         ),
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { isOriginFocused = it.isFocused }
                     )
 
                     // Sugestões para Origem
-                    AnimatedVisibility(visible = originSuggestions.isNotEmpty()) {
+                    AnimatedVisibility(visible = isOriginFocused && originSuggestions.isNotEmpty() && origin.isNotBlank()) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -260,8 +267,9 @@ fun HomeScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
-                                                origin = viewModel?.onOriginSuggestionSelected(place) ?: place.displayName ?: ""
+                                                origin = viewModel?.onOriginSuggestionSelected(place) ?: place.toCleanDisplayName()
                                                 focusManager.clearFocus()
+                                                viewModel?.clearOriginSuggestions()
                                             }
                                             .padding(horizontal = 12.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -274,7 +282,7 @@ fun HomeScreen(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = place.displayName ?: "",
+                                            text = place.toCleanDisplayName(),
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 2,
@@ -292,8 +300,8 @@ fun HomeScreen(
                             val temp = origin
                             origin = destination
                             destination = temp
-                            viewModel?.onOriginQueryChanged(origin)
-                            viewModel?.onDestinationQueryChanged(destination)
+                            viewModel?.clearOriginSuggestions()
+                            viewModel?.clearDestinationSuggestions()
                         },
                         modifier = Modifier
                             .padding(vertical = 4.dp)
@@ -331,7 +339,7 @@ fun HomeScreen(
                             if (destination.isNotEmpty()) {
                                 IconButton(onClick = {
                                     destination = ""
-                                    viewModel?.onDestinationQueryChanged("")
+                                    viewModel?.clearDestinationSuggestions()
                                 }) {
                                     Icon(
                                         imageVector = Icons.Default.Clear,
@@ -364,11 +372,13 @@ fun HomeScreen(
                             unfocusedBorderColor = MaterialTheme.colorScheme.outline
                         ),
                         shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { isDestinationFocused = it.isFocused }
                     )
 
                     // Sugestões para Destino
-                    AnimatedVisibility(visible = destinationSuggestions.isNotEmpty()) {
+                    AnimatedVisibility(visible = isDestinationFocused && destinationSuggestions.isNotEmpty() && destination.isNotBlank()) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -388,8 +398,9 @@ fun HomeScreen(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
-                                                destination = viewModel?.onDestinationSuggestionSelected(place) ?: place.displayName ?: ""
+                                                destination = viewModel?.onDestinationSuggestionSelected(place) ?: place.toCleanDisplayName()
                                                 focusManager.clearFocus()
+                                                viewModel?.clearDestinationSuggestions()
                                             }
                                             .padding(horizontal = 12.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically
@@ -402,7 +413,7 @@ fun HomeScreen(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         Text(
-                                            text = place.displayName ?: "",
+                                            text = place.toCleanDisplayName(),
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 2,

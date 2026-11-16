@@ -8,6 +8,7 @@ import com.itinerarium.data.model.TransportMode
 import com.itinerarium.data.network.ApiClient
 import com.itinerarium.data.network.NominatimApiService
 import com.itinerarium.data.network.RouteApiService
+import com.itinerarium.data.network.dto.OrsDirectionsRequest
 import com.itinerarium.data.network.dto.OrsStep
 import retrofit2.HttpException
 import java.io.IOException
@@ -22,6 +23,11 @@ class RemoteRouteRepositoryImpl(
     private val nominatimApiService: NominatimApiService = ApiClient.nominatimApiService,
     private val apiKey: String = BuildConfig.ORS_API_KEY
 ) : RouteRepository {
+
+    private companion object {
+        /** Valor especial da ORS para "sem limite de raio" ao buscar a via mais próxima. */
+        const val UNLIMITED_RADIUS = -1.0
+    }
 
     override suspend fun calculateRoutes(
         origin: String,
@@ -64,8 +70,7 @@ class RemoteRouteRepositoryImpl(
                 val response = apiService.getDirections(
                     profile = profile,
                     apiKey = apiKey,
-                    start = startCoords,
-                    end = endCoords
+                    body = buildDirectionsRequest(startCoords, endCoords)
                 )
 
                 if (response.isSuccessful) {
@@ -174,8 +179,25 @@ class RemoteRouteRepositoryImpl(
         )
     }
 
+    /**
+     * Monta o corpo da requisição. O raio -1 (sem limite) faz a ORS encaixar cada ponto na via
+     * roteável mais próxima, em vez de falhar quando não há via em até 350 m (erro 2010).
+     */
+    private fun buildDirectionsRequest(start: String, end: String): OrsDirectionsRequest {
+        fun toLonLat(value: String): List<Double> = value.split(",").map { it.trim().toDouble() }
+        return OrsDirectionsRequest(
+            coordinates = listOf(toLonLat(start), toLonLat(end)),
+            radiuses = listOf(UNLIMITED_RADIUS, UNLIMITED_RADIUS),
+            language = "pt"
+        )
+    }
+
+    /**
+     * A ORS pode devolver o erro 2010 ("Could not find routable point") com HTTP 400 ou 404,
+     * por isso ambos os códigos são aceitos.
+     */
     private fun isRoutablePointError(code: Int, message: String): Boolean {
-        return code == 400 && (
+        return (code == 400 || code == 404) && (
             message.contains("routable", ignoreCase = true) ||
             message.contains("2010", ignoreCase = true) ||
             message.contains("Could not find routable point", ignoreCase = true)

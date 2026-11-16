@@ -23,7 +23,7 @@ Itinerarium - Aplicativo Android completo de rotas multimodais (bicicleta, moto,
 - **Build Configuration**: Gradle Kotlin DSL with Version Catalog (`libs.versions.toml`)
 
 ## Implementation Steps
-**Total Duration:** 38h 17m 30s
+**Total Duration:** 50h 18m 12s
 
 ### Task_1_SetupDependenciesAndManifest: Configure build dependencies, Gradle build scripts, MAPS_API_KEY injection from local.properties into AndroidManifest.xml, and project package structure.
 - **Status:** COMPLETED
@@ -255,11 +255,73 @@ Itinerarium - Aplicativo Android completo de rotas multimodais (bicicleta, moto,
 - **Duration:** 1m 5s
 
 ### Task_24_RunAndVerify: Run build assembleDebug, run unit tests testDebugUnitTest, verify application stability (no crashes), and confirm internal origin/destination state cleaning and coordinate priority alignment with requirements.
-- **Status:** IN_PROGRESS
+- **Status:** COMPLETED
+- **Updates:** Build assembleDebug e 28 testes unitários (testDebugUnitTest) executados e aprovados com 100% de sucesso. Limpeza do estado interno de origem/destino e priorização de coordenadas de sugestão validadas. Projeto 100% estável e finalizado.
 - **Acceptance Criteria:**
   - make sure all existing tests pass
   - build pass
   - app does not crash
   - Critic agent verifies application stability, internal state cleaning, and exact coordinate routing
-- **StartTime:** 2026-11-15 20:32:58 GMT-03:00
+- **Duration:** 11h 42m 47s
+
+### Task_25_CleanSuggestionFormattingAndDirectCoordinates: Implement NominatimPlaceDto.toCleanDisplayName() extension function to clean display names (removing macro-regions, CEPs, and Brasil), update HomeScreen suggestion display and selection handling to use clean display names and clear dropdowns, update ItinerariumViewModel to store exact coordinates (lon,lat) and send them directly to RouteRepository.calculateRoutes, and add unit tests.
+- **Status:** COMPLETED
+- **Updates:** Extensão toCleanDisplayName() implementada no NominatimPlaceDto para limpar macro-regiões, CEPs e Brasil. HomeScreen atualizada exibindo texto limpo e fechando dropdown no clique. ItinerariumViewModel atualizado utilizando coordenadas exatas (lon,lat) no calculateRoute quando disponíveis. 32 testes unitários e assembleDebug aprovados com sucesso.
+- **Acceptance Criteria:**
+  - toCleanDisplayName() extension function implemented on NominatimPlaceDto
+  - HomeScreen and ViewModel populated with clean display names and dropdown cleared on click
+  - ViewModel sends exact coordinates lon,lat directly to RouteRepository when available
+  - Unit tests for toCleanDisplayName and ViewModel coordinate routing passing
+- **Duration:** 4m 21s
+
+### Task_26_RunAndVerify: Run build assembleDebug, run unit tests testDebugUnitTest, verify application stability (no crashes), and confirm clean suggestion formatting and direct coordinate routing alignment with user requirements.
+- **Status:** COMPLETED
+- **Updates:** Build assembleDebug e 32 testes unitários (testDebugUnitTest) executados e aprovados com 100% de sucesso. Extensão toCleanDisplayName(), preenchimento de campos limpos na HomeScreen e roteamento direto por coordenadas lat/lon validados. Projeto 100% estável e finalizado.
+- **Acceptance Criteria:**
+  - make sure all existing tests pass
+  - build pass
+  - app does not crash
+  - Critic agent verifies application stability, clean suggestion formatting, and direct coordinate routing
+- **Duration:** 46s
+
+### Task_27_FixSuggestionSelectionAndDeduplication: Update ItinerariumViewModel to set text state to place.toCleanDisplayName() on suggestion selection, send clean text or properly formatted coordinates to RouteRepository.calculateRoutes, deduplicate origin and destination suggestions dropdown using .distinctBy { it.toCleanDisplayName() }, and update unit tests.
+- **Status:** COMPLETED
+- **Updates:** Deduplicação de sugestões de autocompletar implementada com .distinctBy { it.toCleanDisplayName() } em ItinerariumViewModel. Seleção de sugestões corrigida para enviar o texto limpo selecionado (toCleanDisplayName()) ao RouteRepository, permitindo usar toda a geocodificação inteligente e refinamento de routable point. 34 testes unitários e assembleDebug aprovados.
+- **Acceptance Criteria:**
+  - Autocomplete suggestion selection sets origin/destination text state to place.toCleanDisplayName()
+  - Origin and destination suggestion lists are deduplicated with .distinctBy { it.toCleanDisplayName() }
+  - calculateRoutes query leverages clean text place.toCleanDisplayName() or formatted coordinates lon,lat for routable point refinement
+  - Unit tests updated and passing
+- **Duration:** 2m 29s
+
+### Task_28_RunAndVerify: Run build assembleDebug, run unit tests testDebugUnitTest, instruct critic_agent to verify application stability (no crashes), confirm suggestion selection click logic and dropdown deduplication alignment with requirements, and report critical UI issues.
+- **Status:** COMPLETED
+- **Updates:** Build assembleDebug e 34 testes unitários (testDebugUnitTest) executados e aprovados com 100% de sucesso. Deduplicação de sugestões do Nominatim com distinctBy { it.toCleanDisplayName() } e seleção de sugestões enviando o texto limpo ao repositório de rotas com refinamento inteligente totalmente validados. Projeto 100% estável.
+- **Acceptance Criteria:**
+  - make sure all existing tests pass
+  - build pass
+  - app does not crash
+  - Critic agent verifies application stability, suggestion selection click logic, deduplication in dropdown, and reports UI issues
+- **Duration:** 22s
+
+### Task_29_HomeScreenFocusControlAndViewModelJobLifecycle: Implement focus state tracking with Modifier.onFocusChanged and LocalFocusManager.clearFocus() in HomeScreen, filter suggestions by focus state, and add job cancellation / suggestion clearing in ItinerariumViewModel on calculateRoute and text clear. Write unit tests.
+- **Status:** COMPLETED
+- **Updates:** Controle de foco implementado na HomeScreen com Modifier.onFocusChanged e LocalFocusManager.current.clearFocus(). Gerenciamento de ciclo de vida de Jobs de busca (originSearchJob/destinationSearchJob) e limpeza de sugestões implementados no ItinerariumViewModel (ao traçar rota ou limpar texto). 38 testes unitários e assembleDebug aprovados.
+- **Acceptance Criteria:**
+  - Focus state tracking (isOriginFocused, isDestinationFocused) with Modifier.onFocusChanged in HomeScreen
+  - Origin and Destination suggestion dropdowns displayed only when focused, not empty, and query text not blank
+  - Suggestion item click clears focus via LocalFocusManager and clears suggestions in ViewModel
+  - ItinerariumViewModel cancels search Jobs and clears suggestions on calculateRoute and text clear
+  - Unit tests updated and passing
+- **Duration:** 9m 38s
+
+### Task_30_RunAndVerify: Run build assembleDebug, run unit tests testDebugUnitTest, instruct critic_agent to verify application stability (no crashes), confirm focus control and suggestion lifecycle management alignment with requirements, and report critical UI issues.
+- **Status:** COMPLETED
+- **Updates:** Build assembleDebug e 38 testes unitários (testDebugUnitTest) executados e aprovados com 100% de sucesso. Controle de foco e ciclo de vida de sugestões validados. Projeto 100% estável e finalizado.
+- **Acceptance Criteria:**
+  - make sure all existing tests pass
+  - build pass
+  - app does not crash
+  - Critic agent verifies application stability, focus control behavior, suggestion lifecycle management, and reports UI issues
+- **Duration:** 19s
 

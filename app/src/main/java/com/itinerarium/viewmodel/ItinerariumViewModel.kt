@@ -7,6 +7,7 @@ import com.itinerarium.data.model.TransportMode
 import com.itinerarium.data.network.ApiClient
 import com.itinerarium.data.network.NominatimApiService
 import com.itinerarium.data.network.dto.NominatimPlaceDto
+import com.itinerarium.data.network.dto.toCleanDisplayName
 import com.itinerarium.data.repository.RepositoryProvider
 import com.itinerarium.data.repository.RouteRepository
 import kotlinx.coroutines.Job
@@ -52,13 +53,12 @@ class ItinerariumViewModel(
      */
     fun onOriginQueryChanged(query: String) {
         selectedOriginCoords = null
-        originSearchJob?.cancel()
-
         val cleanQuery = query.trim()
-        if (cleanQuery.length < 3) {
-            _originSuggestions.value = emptyList()
+        if (cleanQuery.isBlank() || cleanQuery.length < 3) {
+            clearOriginSuggestions()
             return
         }
+        originSearchJob?.cancel()
 
         originSearchJob = viewModelScope.launch {
             delay(500)
@@ -71,7 +71,8 @@ class ItinerariumViewModel(
                     language = "pt-BR"
                 )
                 if (response.isSuccessful) {
-                    _originSuggestions.value = response.body() ?: emptyList()
+                    val places = response.body() ?: emptyList()
+                    _originSuggestions.value = places.distinctBy { it.toCleanDisplayName() }
                 } else {
                     _originSuggestions.value = emptyList()
                 }
@@ -86,13 +87,12 @@ class ItinerariumViewModel(
      */
     fun onDestinationQueryChanged(query: String) {
         selectedDestinationCoords = null
-        destinationSearchJob?.cancel()
-
         val cleanQuery = query.trim()
-        if (cleanQuery.length < 3) {
-            _destinationSuggestions.value = emptyList()
+        if (cleanQuery.isBlank() || cleanQuery.length < 3) {
+            clearDestinationSuggestions()
             return
         }
+        destinationSearchJob?.cancel()
 
         destinationSearchJob = viewModelScope.launch {
             delay(500)
@@ -105,7 +105,8 @@ class ItinerariumViewModel(
                     language = "pt-BR"
                 )
                 if (response.isSuccessful) {
-                    _destinationSuggestions.value = response.body() ?: emptyList()
+                    val places = response.body() ?: emptyList()
+                    _destinationSuggestions.value = places.distinctBy { it.toCleanDisplayName() }
                 } else {
                     _destinationSuggestions.value = emptyList()
                 }
@@ -116,61 +117,42 @@ class ItinerariumViewModel(
     }
 
     /**
-     * Processa o nome retornado pelas sugestões do Nominatim, removendo termos redundantes,
-     * macro-regiões do Brasil (ex: ", Região Nordeste", ", Região Sudeste", etc.) e o sufixo do país (ex: ", Brasil", ", Brazil").
-     * Exemplo: de "Floresta, Pernambuco, Região Nordeste, Brasil" para "Floresta, Pernambuco".
+     * Processa o nome retornado pelas sugestões do Nominatim usando a extensão toCleanDisplayName.
      */
     fun cleanSuggestionText(displayName: String): String {
-        if (displayName.isBlank()) return displayName
-        var cleaned = displayName
-
-        val countryRegex = Regex("(?i),\\s*(brasil|brazil)\\b")
-        cleaned = countryRegex.replace(cleaned, "")
-
-        val macroRegionRegex = Regex("(?i),\\s*(regi[ãa]o\\s+)?(nordeste|sudeste|sul|norte|centro[- ]oeste)\\b")
-        cleaned = macroRegionRegex.replace(cleaned, "")
-
-        val macroRegionRegex2 = Regex("(?i)\\b(regi[ãa]o\\s+)?(nordeste|sudeste|sul|norte|centro[- ]oeste)\\b")
-        cleaned = macroRegionRegex2.replace(cleaned, "")
-
-        val countryRegex2 = Regex("(?i)\\b(brasil|brazil)\\b")
-        cleaned = countryRegex2.replace(cleaned, "")
-
-        cleaned = cleaned.replace(Regex(",\\s*,"), ",")
-        cleaned = cleaned.replace(Regex("\\s+"), " ")
-        cleaned = cleaned.replace(Regex("^[,\\s]+|[,\\s]+$"), "")
-        cleaned = cleaned.replace(Regex(",\\s*,"), ",")
-        return cleaned.trim()
+        return NominatimPlaceDto(displayName = displayName).toCleanDisplayName()
     }
 
     /**
      * Define o local de origem selecionado a partir de uma sugestão do Nominatim,
-     * limpando o texto do nome, salvando as coordenadas exatas ("lon,lat") e limpando a lista de sugestões.
+     * limpando o texto do nome e limpando as listas de sugestões.
      */
     fun onOriginSuggestionSelected(place: NominatimPlaceDto): String {
-        selectedOriginCoords = "${place.lon},${place.lat}"
+        val cleanName = place.toCleanDisplayName()
+        selectedOriginCoords = null
         _originSuggestions.value = emptyList()
+        _destinationSuggestions.value = emptyList()
         originSearchJob?.cancel()
-        val cleaned = cleanSuggestionText(place.displayName ?: "")
-        lastOrigin = cleaned
-        return cleaned
+        lastOrigin = cleanName
+        return cleanName
     }
 
     /**
      * Define o local de destino selecionado a partir de uma sugestão do Nominatim,
-     * limpando o texto do nome, salvando as coordenadas exatas ("lon,lat") e limpando a lista de sugestões.
+     * limpando o texto do nome e limpando as listas de sugestões.
      */
     fun onDestinationSuggestionSelected(place: NominatimPlaceDto): String {
-        selectedDestinationCoords = "${place.lon},${place.lat}"
+        val cleanName = place.toCleanDisplayName()
+        selectedDestinationCoords = null
+        _originSuggestions.value = emptyList()
         _destinationSuggestions.value = emptyList()
         destinationSearchJob?.cancel()
-        val cleaned = cleanSuggestionText(place.displayName ?: "")
-        lastDestination = cleaned
-        return cleaned
+        lastDestination = cleanName
+        return cleanName
     }
 
     /**
-     * Limpa manualmente as sugestões de origem.
+     * Limpa manualmente as sugestões de origem e cancela o job de busca.
      */
     fun clearOriginSuggestions() {
         _originSuggestions.value = emptyList()
@@ -178,11 +160,19 @@ class ItinerariumViewModel(
     }
 
     /**
-     * Limpa manualmente as sugestões de destino.
+     * Limpa manualmente as sugestões de destino e cancela o job de busca.
      */
     fun clearDestinationSuggestions() {
         _destinationSuggestions.value = emptyList()
         destinationSearchJob?.cancel()
+    }
+
+    /**
+     * Método auxiliar de limpeza para cancelar todos os jobs de busca e zerar todas as sugestões.
+     */
+    fun clearAllSearchSuggestions() {
+        clearOriginSuggestions()
+        clearDestinationSuggestions()
     }
 
     /**
@@ -197,6 +187,8 @@ class ItinerariumViewModel(
         destination: String,
         transportMode: TransportMode? = null
     ) {
+        clearAllSearchSuggestions()
+
         val cleanOrigin = cleanSuggestionText(origin).trim()
         val cleanDestination = cleanSuggestionText(destination).trim()
 

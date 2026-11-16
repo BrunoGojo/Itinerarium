@@ -4,6 +4,7 @@ import com.itinerarium.data.model.TransportMode
 import com.itinerarium.data.network.NominatimApiService
 import com.itinerarium.data.network.RouteApiService
 import com.itinerarium.data.network.dto.NominatimPlaceDto
+import com.itinerarium.data.network.dto.OrsDirectionsRequest
 import com.itinerarium.data.network.dto.OrsDirectionsResponse
 import com.itinerarium.data.network.dto.OrsFeature
 import com.itinerarium.data.network.dto.OrsGeocodeFeature
@@ -34,11 +35,9 @@ class RemoteRouteRepositoryTest {
         override suspend fun getDirections(
             profile: String,
             apiKey: String,
-            start: String,
-            end: String,
-            language: String
+            body: OrsDirectionsRequest
         ): Response<OrsDirectionsResponse> {
-            lastLanguage = language
+            lastLanguage = body.language
             val summary = OrsSummary(distance = 5000.0, duration = 600.0) // 5 km, 10 min
             val steps = listOf(
                 OrsStep(distance = 2500.0, duration = 300.0, instruction = "Siga em frente na Av Paulista", name = "Av Paulista"),
@@ -178,9 +177,7 @@ class RemoteRouteRepositoryTest {
         override suspend fun getDirections(
             profile: String,
             apiKey: String,
-            start: String,
-            end: String,
-            language: String
+            body: OrsDirectionsRequest
         ): Response<OrsDirectionsResponse> {
             val errorBody = okhttp3.ResponseBody.create(
                 null,
@@ -218,15 +215,57 @@ class RemoteRouteRepositoryTest {
         assertTrue(exception!!.message!!.contains("Não foi possível traçar rota para este ponto. Tente inserir um endereço, bairro ou rua mais específico"))
     }
 
+    private class FakeRoutable404RouteApiService : RouteApiService {
+        var lastBody: OrsDirectionsRequest? = null
+
+        override suspend fun getDirections(
+            profile: String,
+            apiKey: String,
+            body: OrsDirectionsRequest
+        ): Response<OrsDirectionsResponse> {
+            lastBody = body
+            val errorBody = okhttp3.ResponseBody.create(
+                null,
+                "{\"error\":{\"code\":2010,\"message\":\"Could not find routable point within a radius of 350.0 meters\"}}"
+            )
+            return Response.error(404, errorBody)
+        }
+
+        override suspend fun searchGeocode(
+            apiKey: String,
+            text: String,
+            size: Int
+        ): Response<OrsGeocodeResponse> {
+            val geometry = OrsGeometry(coordinates = listOf(listOf(-38.45, -8.63)))
+            val properties = OrsGeocodeProperties(label = "Teste", name = "Teste")
+            val feature = OrsGeocodeFeature(geometry = geometry, properties = properties)
+            return Response.success(OrsGeocodeResponse(features = listOf(feature)))
+        }
+    }
+
+    @Test
+    fun calculateRoutes_treatsHttp404Code2010AsRoutablePointError_andSendsUnlimitedRadiuses() = runTest {
+        val orsService = FakeRoutable404RouteApiService()
+        val repository = RemoteRouteRepositoryImpl(orsService, FakeNominatimApiService(), "test_api_key")
+
+        val result = repository.calculateRoutes(
+            origin = "Floresta, PE",
+            destination = "Recife, PE",
+            selectedMode = TransportMode.CAR
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull()!!.message!!.contains("Não foi possível traçar rota para este ponto"))
+        assertEquals(listOf(-1.0, -1.0), orsService.lastBody?.radiuses)
+    }
+
     private class FakeRefiningRouteApiService : RouteApiService {
         var callCount = 0
 
         override suspend fun getDirections(
             profile: String,
             apiKey: String,
-            start: String,
-            end: String,
-            language: String
+            body: OrsDirectionsRequest
         ): Response<OrsDirectionsResponse> {
             callCount++
             if (callCount == 1) {

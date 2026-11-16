@@ -1,8 +1,12 @@
 package com.itinerarium
 
+import com.itinerarium.data.model.Route
+import com.itinerarium.data.model.TransportMode
 import com.itinerarium.data.network.NominatimApiService
 import com.itinerarium.data.network.dto.NominatimPlaceDto
+import com.itinerarium.data.network.dto.toCleanDisplayName
 import com.itinerarium.data.repository.MockRouteRepository
+import com.itinerarium.data.repository.RouteRepository
 import com.itinerarium.viewmodel.ItinerariumViewModel
 import com.itinerarium.viewmodel.UiState
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +32,8 @@ class ItinerariumViewModelTest {
     private lateinit var viewModel: ItinerariumViewModel
 
     private class FakeNominatimApiService : NominatimApiService {
+        var placesToReturn: List<NominatimPlaceDto>? = null
+
         override suspend fun search(
             query: String,
             format: String,
@@ -37,13 +43,15 @@ class ItinerariumViewModelTest {
             addressDetails: Int,
             userAgent: String
         ): Response<List<NominatimPlaceDto>> {
-            val place = NominatimPlaceDto(
-                placeId = 100L,
-                lat = "-8.0476",
-                lon = "-34.8770",
-                displayName = "Recife, PE, Brasil"
+            val defaultPlaces = listOf(
+                NominatimPlaceDto(
+                    placeId = 100L,
+                    lat = "-8.0476",
+                    lon = "-34.8770",
+                    displayName = "Recife, PE, Brasil"
+                )
             )
-            return Response.success(listOf(place))
+            return Response.success(placesToReturn ?: defaultPlaces)
         }
     }
 
@@ -131,7 +139,43 @@ class ItinerariumViewModelTest {
     }
 
     @Test
-    fun onOriginSuggestionSelected_setsCoordsAndClearsSuggestions() = runTest {
+    fun onOriginQueryChanged_deduplicatesSuggestionsByCleanDisplayName() = runTest {
+        val duplicatePlaces = listOf(
+            NominatimPlaceDto(placeId = 1L, lat = "-8.61", lon = "-38.97", displayName = "Floresta, Pernambuco, Região Nordeste, Brasil"),
+            NominatimPlaceDto(placeId = 2L, lat = "-8.62", lon = "-38.98", displayName = "Floresta, Pernambuco, Região Nordeste, Brasil"),
+            NominatimPlaceDto(placeId = 3L, lat = "-8.05", lon = "-34.87", displayName = "Recife, PE, Brasil")
+        )
+        fakeNominatimService.placesToReturn = duplicatePlaces
+
+        viewModel.onOriginQueryChanged("Floresta")
+        testDispatcher.scheduler.advanceTimeBy(550)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val suggestions = viewModel.originSuggestions.value
+        assertEquals(2, suggestions.size)
+        assertEquals("Floresta, Pernambuco", suggestions[0].toCleanDisplayName())
+        assertEquals("Recife, PE", suggestions[1].toCleanDisplayName())
+    }
+
+    @Test
+    fun onDestinationQueryChanged_deduplicatesSuggestionsByCleanDisplayName() = runTest {
+        val duplicatePlaces = listOf(
+            NominatimPlaceDto(placeId = 1L, lat = "-8.61", lon = "-38.97", displayName = "Floresta, Pernambuco, Região Nordeste, Brasil"),
+            NominatimPlaceDto(placeId = 2L, lat = "-8.62", lon = "-38.98", displayName = "Floresta, Pernambuco, Região Nordeste, Brasil")
+        )
+        fakeNominatimService.placesToReturn = duplicatePlaces
+
+        viewModel.onDestinationQueryChanged("Floresta")
+        testDispatcher.scheduler.advanceTimeBy(550)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        val suggestions = viewModel.destinationSuggestions.value
+        assertEquals(1, suggestions.size)
+        assertEquals("Floresta, Pernambuco", suggestions[0].toCleanDisplayName())
+    }
+
+    @Test
+    fun onOriginSuggestionSelected_clearsCoordsAndSuggestions() = runTest {
         viewModel.onOriginQueryChanged("Recife")
         testDispatcher.scheduler.advanceTimeBy(550)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -139,8 +183,9 @@ class ItinerariumViewModelTest {
         val selectedPlace = viewModel.originSuggestions.value.first()
         viewModel.onOriginSuggestionSelected(selectedPlace)
 
-        assertEquals("-34.8770,-8.0476", viewModel.selectedOriginCoords)
+        assertNull(viewModel.selectedOriginCoords)
         assertTrue(viewModel.originSuggestions.value.isEmpty())
+        assertTrue(viewModel.destinationSuggestions.value.isEmpty())
     }
 
     @Test
@@ -153,7 +198,7 @@ class ItinerariumViewModelTest {
     }
 
     @Test
-    fun onDestinationSuggestionSelected_setsCoordsAndClearsSuggestions() = runTest {
+    fun onDestinationSuggestionSelected_clearsCoordsAndSuggestions() = runTest {
         viewModel.onDestinationQueryChanged("Olinda")
         testDispatcher.scheduler.advanceTimeBy(550)
         testDispatcher.scheduler.advanceUntilIdle()
@@ -161,8 +206,9 @@ class ItinerariumViewModelTest {
         val selectedPlace = viewModel.destinationSuggestions.value.first()
         viewModel.onDestinationSuggestionSelected(selectedPlace)
 
-        assertEquals("-34.8770,-8.0476", viewModel.selectedDestinationCoords)
+        assertNull(viewModel.selectedDestinationCoords)
         assertTrue(viewModel.destinationSuggestions.value.isEmpty())
+        assertTrue(viewModel.originSuggestions.value.isEmpty())
     }
 
     @Test
@@ -201,7 +247,7 @@ class ItinerariumViewModelTest {
     }
 
     @Test
-    fun onOriginSuggestionSelected_usesCleanedTextAndStoresCoordinates() = runTest {
+    fun onOriginSuggestionSelected_usesCleanedTextAndResetsCoordinates() = runTest {
         val place = NominatimPlaceDto(
             placeId = 1L,
             lat = "-8.61",
@@ -210,12 +256,13 @@ class ItinerariumViewModelTest {
         )
         val cleaned = viewModel.onOriginSuggestionSelected(place)
         assertEquals("Floresta, Pernambuco", cleaned)
-        assertEquals("-38.97,-8.61", viewModel.selectedOriginCoords)
+        assertNull(viewModel.selectedOriginCoords)
         assertTrue(viewModel.originSuggestions.value.isEmpty())
+        assertTrue(viewModel.destinationSuggestions.value.isEmpty())
     }
 
     @Test
-    fun onDestinationSuggestionSelected_usesCleanedTextAndStoresCoordinates() = runTest {
+    fun onDestinationSuggestionSelected_usesCleanedTextAndResetsCoordinates() = runTest {
         val place = NominatimPlaceDto(
             placeId = 2L,
             lat = "-8.05",
@@ -224,8 +271,9 @@ class ItinerariumViewModelTest {
         )
         val cleaned = viewModel.onDestinationSuggestionSelected(place)
         assertEquals("Recife, PE", cleaned)
-        assertEquals("-34.87,-8.05", viewModel.selectedDestinationCoords)
+        assertNull(viewModel.selectedDestinationCoords)
         assertTrue(viewModel.destinationSuggestions.value.isEmpty())
+        assertTrue(viewModel.originSuggestions.value.isEmpty())
     }
 
     @Test
@@ -242,5 +290,123 @@ class ItinerariumViewModelTest {
         val successState = state as UiState.Success
         assertEquals("Floresta, Pernambuco", successState.origin)
         assertEquals("Recife, PE", successState.destination)
+    }
+
+    @Test
+    fun toCleanDisplayName_formatsDisplayNameCorrectly() {
+        val place1 = NominatimPlaceDto(
+            displayName = "Floresta, Pernambuco, Região Nordeste, 56400-000, Brasil"
+        )
+        assertEquals("Floresta, Pernambuco", place1.toCleanDisplayName())
+
+        val place2 = NominatimPlaceDto(
+            displayName = "Avenida Paulista, Bela Vista, São Paulo, Região Sudeste, 01310-100, Brasil"
+        )
+        assertEquals("Avenida Paulista, Bela Vista, São Paulo", place2.toCleanDisplayName())
+
+        val place3 = NominatimPlaceDto(displayName = "Brasil")
+        assertEquals("Brasil", place3.toCleanDisplayName())
+
+        val place4 = NominatimPlaceDto(displayName = null)
+        assertEquals("", place4.toCleanDisplayName())
+    }
+
+    private class TrackingRouteRepository : RouteRepository {
+        var lastOriginPassed: String? = null
+        var lastDestinationPassed: String? = null
+
+        override suspend fun calculateRoutes(
+            origin: String,
+            destination: String,
+            selectedMode: TransportMode?
+        ): Result<List<Route>> {
+            lastOriginPassed = origin
+            lastDestinationPassed = destination
+            return Result.success(emptyList())
+        }
+    }
+
+    @Test
+    fun calculateRoute_passesCleanTextToRepositoryWhenSuggestionSelected() = runTest {
+        val trackingRepo = TrackingRouteRepository()
+        val vm = ItinerariumViewModel(trackingRepo, fakeNominatimService)
+
+        val originPlace = NominatimPlaceDto(lat = "-8.0476", lon = "-34.8770", displayName = "Recife, PE, Brasil")
+        val destPlace = NominatimPlaceDto(lat = "-8.0500", lon = "-34.8800", displayName = "Olinda, PE, Brasil")
+
+        val cleanOrigin = vm.onOriginSuggestionSelected(originPlace)
+        val cleanDest = vm.onDestinationSuggestionSelected(destPlace)
+
+        vm.calculateRoute(origin = cleanOrigin, destination = cleanDest)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("Recife, PE", trackingRepo.lastOriginPassed)
+        assertEquals("Olinda, PE", trackingRepo.lastDestinationPassed)
+    }
+
+    @Test
+    fun calculateRoute_passesFreeTextToRepositoryWhenNoSuggestionSelected() = runTest {
+        val trackingRepo = TrackingRouteRepository()
+        val vm = ItinerariumViewModel(trackingRepo, fakeNominatimService)
+
+        vm.calculateRoute(origin = "Praça da Sé", destination = "Avenida Paulista")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("Praça da Sé", trackingRepo.lastOriginPassed)
+        assertEquals("Avenida Paulista", trackingRepo.lastDestinationPassed)
+    }
+
+    @Test
+    fun calculateRoute_clearsSuggestionsAndCancelsJobs() = runTest {
+        viewModel.onOriginQueryChanged("Recife")
+        viewModel.onDestinationQueryChanged("Olinda")
+        testDispatcher.scheduler.advanceTimeBy(550)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.originSuggestions.value.isNotEmpty())
+        assertTrue(viewModel.destinationSuggestions.value.isNotEmpty())
+
+        viewModel.calculateRoute(origin = "Recife", destination = "Olinda")
+
+        assertTrue(viewModel.originSuggestions.value.isEmpty())
+        assertTrue(viewModel.destinationSuggestions.value.isEmpty())
+    }
+
+    @Test
+    fun clearOriginSuggestions_clearsSuggestions() = runTest {
+        viewModel.onOriginQueryChanged("Recife")
+        testDispatcher.scheduler.advanceTimeBy(550)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.originSuggestions.value.isNotEmpty())
+
+        viewModel.clearOriginSuggestions()
+        assertTrue(viewModel.originSuggestions.value.isEmpty())
+    }
+
+    @Test
+    fun clearDestinationSuggestions_clearsSuggestions() = runTest {
+        viewModel.onDestinationQueryChanged("Olinda")
+        testDispatcher.scheduler.advanceTimeBy(550)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.destinationSuggestions.value.isNotEmpty())
+
+        viewModel.clearDestinationSuggestions()
+        assertTrue(viewModel.destinationSuggestions.value.isEmpty())
+    }
+
+    @Test
+    fun clearAllSearchSuggestions_clearsAllSuggestions() = runTest {
+        viewModel.onOriginQueryChanged("Recife")
+        viewModel.onDestinationQueryChanged("Olinda")
+        testDispatcher.scheduler.advanceTimeBy(550)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.originSuggestions.value.isNotEmpty())
+        assertTrue(viewModel.destinationSuggestions.value.isNotEmpty())
+
+        viewModel.clearAllSearchSuggestions()
+
+        assertTrue(viewModel.originSuggestions.value.isEmpty())
+        assertTrue(viewModel.destinationSuggestions.value.isEmpty())
     }
 }
